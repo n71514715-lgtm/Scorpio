@@ -1,0 +1,2 @@
+#define XFRONTPANELDISPLAY_API __declspec(dllexport)
+#define XFRONTPANELDISPLAY_API __declspec(dllimport)

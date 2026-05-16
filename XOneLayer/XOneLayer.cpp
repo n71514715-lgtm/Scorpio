@@ -233,7 +233,32 @@ bool LoadXboxFile(const std::string& filePath) {
     else {
         std::cout << "[Scorpio] Warning: Could not copy d3d12_x.dll" << std::endl;
     }
+    // Copy xg_x.dll
+    std::string xgxSource = exeDir + "\\xgx.dll";
+    std::string xgxDest = gameDir + "\\xg_x.dll";
+    if (CopyFileA(xgxSource.c_str(), xgxDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] xg_x.dll injected!" << std::endl;
+    }
 
+    // Copy GameInput.dll
+    std::string giSource = exeDir + "\\GameInput.dll";
+    std::string giDest = gameDir + "\\GameInput.dll";
+    if (CopyFileA(giSource.c_str(), giDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] GameInput.dll injected!" << std::endl;
+    }
+    // Copy xmem.dll
+    std::string xmemSource = exeDir + "\\xmem.dll";
+    std::string xmemDest = gameDir + "\\xmem.dll";
+    if (CopyFileA(xmemSource.c_str(), xmemDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] xmem.dll injected!" << std::endl;
+    }
+
+    // Copy XFrontPanelDisplay.dll
+    std::string xfpSource = exeDir + "\\XFrontPanelDisplay.dll";
+    std::string xfpDest = gameDir + "\\XFrontPanelDisplay.dll";
+    if (CopyFileA(xfpSource.c_str(), xfpDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] XFrontPanelDisplay.dll injected!" << std::endl;
+    }
     STARTUPINFOA si = {};
     PROCESS_INFORMATION pi = {};
     si.cb = sizeof(si);
