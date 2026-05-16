@@ -4,11 +4,10 @@
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
     switch (reason) {
     case DLL_PROCESS_ATTACH:
-        OutputDebugStringA("[Scorpio/xg_x] Xbox Graphics library loaded!\n");
-        OutputDebugStringA("[Scorpio/xg_x] Intercepting Xbox GPU calls...\n");
+        OutputDebugStringA("[Scorpio/GameInput] Xbox Input system loaded!\n");
         break;
     case DLL_PROCESS_DETACH:
-        OutputDebugStringA("[Scorpio/xg_x] Xbox Graphics library unloaded\n");
+        OutputDebugStringA("[Scorpio/GameInput] Xbox Input system unloaded\n");
         break;
     }
     return TRUE;

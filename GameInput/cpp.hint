@@ -1,0 +1,2 @@
+#define GAMEINPUT_API __declspec(dllexport)
+#define GAMEINPUT_API __declspec(dllimport)

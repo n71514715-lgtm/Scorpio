@@ -221,7 +221,10 @@ bool LoadXboxFile(const std::string& filePath) {
     std::cout << "[Scorpio] Preparing to launch: " << filePath << std::endl;
 
     std::string gameDir = filePath.substr(0, filePath.find_last_of("\\/"));
-    std::string dllSource = "d3d12_x.dll";
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::string exeDir = std::string(exePath).substr(0, std::string(exePath).find_last_of("\\/"));
+    std::string dllSource = exeDir + "\\d3d12_x.dll";
     std::string dllDest = gameDir + "\\d3d12_x.dll";
 
     if (CopyFileA(dllSource.c_str(), dllDest.c_str(), FALSE)) {
