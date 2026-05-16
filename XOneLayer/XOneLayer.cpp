@@ -216,11 +216,49 @@ bool LoadXboxFile(const std::string& filePath) {
     }
 
     return true;
+}bool LaunchGame(const std::string& filePath) {
+    std::cout << "\n[Scorpio] ===== LAUNCHING GAME =====" << std::endl;
+    std::cout << "[Scorpio] Preparing to launch: " << filePath << std::endl;
+
+    std::string gameDir = filePath.substr(0, filePath.find_last_of("\\/"));
+    std::string dllSource = "d3d12_x.dll";
+    std::string dllDest = gameDir + "\\d3d12_x.dll";
+
+    if (CopyFileA(dllSource.c_str(), dllDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] d3d12_x.dll injected into game directory!" << std::endl;
+    }
+    else {
+        std::cout << "[Scorpio] Warning: Could not copy d3d12_x.dll" << std::endl;
+    }
+
+    STARTUPINFOA si = {};
+    PROCESS_INFORMATION pi = {};
+    si.cb = sizeof(si);
+
+    std::cout << "[Scorpio] Launching game process..." << std::endl;
+
+    if (CreateProcessA(
+        filePath.c_str(),
+        nullptr, nullptr, nullptr,
+        FALSE, 0, nullptr,
+        gameDir.c_str(),
+        &si, &pi))
+    {
+        std::cout << "[Scorpio] Game launched! PID: " << pi.dwProcessId << std::endl;
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        std::cout << "[Scorpio] Game exited!" << std::endl;
+    }
+    else {
+        std::cout << "[Scorpio] Failed! Error: " << GetLastError() << std::endl;
+    }
+    return true;
 }
 
 int main(int argc, char* argv[]) {
     std::cout << "================================" << std::endl;
-    std::cout << "   Scorpio v0.0.3" << std::endl;
+    std::cout << "   Scorpio v0.0.4" << std::endl;
     std::cout << "   Xbox One Translation Layer" << std::endl;
     std::cout << "   github.com/Scorpio-Xbox" << std::endl;
     std::cout << "================================" << std::endl;
@@ -231,7 +269,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    LoadXboxFile(argv[1]);
+    LoadXboxFile(argv[1]); 
+    std::cout << "\n[Scorpio] Launch game? (y/n): ";
+    char choice;
+    std::cin >> choice;
+    if (choice == 'y' || choice == 'Y') {
+        LaunchGame(argv[1]);
+    }
 
     std::cout << "\n[Scorpio] Done!" << std::endl;
     system("pause");
