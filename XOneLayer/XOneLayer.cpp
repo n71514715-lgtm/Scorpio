@@ -5,22 +5,7 @@
 #include <Windows.h>
 
 // Scorpio - Xbox One Translation Layer
-// v0.0.2 - XVC Container Parser
-
-// XVC Header Magic bytes - every Xbox One game file starts with these
-#define XVC_MAGIC_0 0x43
-#define XVC_MAGIC_1 0x4F
-#define XVC_MAGIC_2 0x4E
-#define XVC_MAGIC_3 0x54
-
-struct XVCHeader {
-    uint8_t  magic[4];        // "CONT" in ASCII
-    uint32_t version;         // XVC version
-    uint64_t contentId;       // Unique game ID
-    uint8_t  contentType;     // Type of content
-    uint64_t contentSize;     // Total size of content
-    uint8_t  reserved[491];   // Reserved space
-};
+// v0.0.3 - PE Header Parser + Xbox API Detection
 
 void PrintHex(const std::vector<uint8_t>& data, size_t count) {
     for (size_t i = 0; i < count && i < data.size(); i++) {
@@ -30,19 +15,163 @@ void PrintHex(const std::vector<uint8_t>& data, size_t count) {
     printf("\n");
 }
 
+struct XVCHeader {
+    uint8_t  magic[4];
+    uint32_t version;
+    uint64_t contentId;
+    uint8_t  contentType;
+    uint64_t contentSize;
+    uint8_t  reserved[491];
+};
+
 bool IsXVCFile(const std::vector<uint8_t>& header) {
-    // Check for CONT magic
-    if (header[0] == XVC_MAGIC_0 &&
-        header[1] == XVC_MAGIC_1 &&
-        header[2] == XVC_MAGIC_2 &&
-        header[3] == XVC_MAGIC_3) {
-        return true;
-    }
-    return false;
+    return header[0] == 0x43 && header[1] == 0x4F &&
+        header[2] == 0x4E && header[3] == 0x54;
 }
 
 bool IsPEFile(const std::vector<uint8_t>& header) {
     return header[0] == 'M' && header[1] == 'Z';
+}
+
+// NEW - Parse PE header and find Xbox imports
+void ParsePEHeader(const std::string& filePath) {
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file.is_open()) return;
+
+    // Read DOS header
+    IMAGE_DOS_HEADER dosHeader;
+    file.read(reinterpret_cast<char*>(&dosHeader), sizeof(dosHeader));
+
+    if (dosHeader.e_magic != IMAGE_DOS_SIGNATURE) {
+        std::cout << "[Scorpio] Not a valid PE file!" << std::endl;
+        return;
+    }
+
+    // Jump to PE header
+    file.seekg(dosHeader.e_lfanew);
+
+    // Read NT headers
+    IMAGE_NT_HEADERS64 ntHeaders;
+    file.read(reinterpret_cast<char*>(&ntHeaders), sizeof(ntHeaders));
+
+    if (ntHeaders.Signature != IMAGE_NT_SIGNATURE) {
+        std::cout << "[Scorpio] Invalid PE signature!" << std::endl;
+        return;
+    }
+
+    std::cout << "\n[Scorpio] ===== PE HEADER INFO =====" << std::endl;
+    std::cout << "[Scorpio] Machine type: ";
+    switch (ntHeaders.FileHeader.Machine) {
+    case IMAGE_FILE_MACHINE_AMD64:
+        std::cout << "x64 (Xbox One compatible)" << std::endl;
+        break;
+    case IMAGE_FILE_MACHINE_I386:
+        std::cout << "x86" << std::endl;
+        break;
+    default:
+        std::cout << "Unknown: " << ntHeaders.FileHeader.Machine << std::endl;
+    }
+
+    std::cout << "[Scorpio] Number of sections: "
+        << ntHeaders.FileHeader.NumberOfSections << std::endl;
+    std::cout << "[Scorpio] Image base: 0x"
+        << std::hex << ntHeaders.OptionalHeader.ImageBase << std::dec << std::endl;
+    std::cout << "[Scorpio] Entry point: 0x"
+        << std::hex << ntHeaders.OptionalHeader.AddressOfEntryPoint
+        << std::dec << std::endl;
+    std::cout << "[Scorpio] Size of image: "
+        << ntHeaders.OptionalHeader.SizeOfImage << " bytes" << std::endl;
+
+    // Read sections
+    std::cout << "\n[Scorpio] ===== SECTIONS =====" << std::endl;
+    std::vector<IMAGE_SECTION_HEADER> sections(ntHeaders.FileHeader.NumberOfSections);
+    file.read(reinterpret_cast<char*>(sections.data()),
+        ntHeaders.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
+
+    for (const auto& section : sections) {
+        char name[9] = {};
+        memcpy(name, section.Name, 8);
+        std::cout << "[Scorpio] Section: " << name
+            << " | Size: " << section.SizeOfRawData
+            << " | VA: 0x" << std::hex << section.VirtualAddress
+            << std::dec << std::endl;
+    }
+
+    // Read entire file for import parsing
+    file.seekg(0, std::ios::end);
+    size_t fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> fileData(fileSize);
+    file.read(reinterpret_cast<char*>(fileData.data()), fileSize);
+    file.close();
+
+    // Parse imports
+    std::cout << "\n[Scorpio] ===== IMPORTED DLLs =====" << std::endl;
+
+    // Xbox specific DLLs we're looking for
+    std::vector<std::string> xboxAPIs = {
+        "xgameruntime", "xboxservices", "gameruntime",
+        "xaudio", "xinput", "xg_", "durango",
+        "era", "xdk", "xbox"
+    };
+
+    IMAGE_DATA_DIRECTORY importDir =
+        ntHeaders.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+
+    if (importDir.VirtualAddress == 0) {
+        std::cout << "[Scorpio] No import table found!" << std::endl;
+        return;
+    }
+
+    // Convert RVA to file offset using sections
+    auto RvaToOffset = [&](uint32_t rva) -> uint32_t {
+        for (const auto& section : sections) {
+            if (rva >= section.VirtualAddress &&
+                rva < section.VirtualAddress + section.SizeOfRawData) {
+                return rva - section.VirtualAddress + section.PointerToRawData;
+            }
+        }
+        return 0;
+        };
+
+    uint32_t importOffset = RvaToOffset(importDir.VirtualAddress);
+    if (importOffset == 0 || importOffset >= fileData.size()) {
+        std::cout << "[Scorpio] Could not locate import table!" << std::endl;
+        return;
+    }
+
+    // Walk import descriptors
+    IMAGE_IMPORT_DESCRIPTOR* importDesc =
+        reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(fileData.data() + importOffset);
+
+    bool foundXboxAPI = false;
+    while (importDesc->Name != 0) {
+        uint32_t nameOffset = RvaToOffset(importDesc->Name);
+        if (nameOffset == 0 || nameOffset >= fileData.size()) break;
+
+        std::string dllName = reinterpret_cast<char*>(fileData.data() + nameOffset);
+        std::cout << "[Scorpio] Imports from: " << dllName << std::endl;
+
+        // Check if it's an Xbox specific API
+        std::string dllLower = dllName;
+        for (auto& c : dllLower) c = tolower(c);
+
+        for (const auto& xboxAPI : xboxAPIs) {
+            if (dllLower.find(xboxAPI) != std::string::npos) {
+                std::cout << "  ^^^ XBOX ONE API DETECTED! - Scorpio needs to implement this!" << std::endl;
+                foundXboxAPI = true;
+                break;
+            }
+        }
+        importDesc++;
+    }
+
+    if (foundXboxAPI) {
+        std::cout << "\n[Scorpio] Xbox One APIs found - translation layer needed!" << std::endl;
+    }
+    else {
+        std::cout << "\n[Scorpio] No Xbox specific APIs detected" << std::endl;
+    }
 }
 
 bool LoadXboxFile(const std::string& filePath) {
@@ -54,7 +183,6 @@ bool LoadXboxFile(const std::string& filePath) {
         return false;
     }
 
-    // Get file size
     file.seekg(0, std::ios::end);
     size_t fileSize = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -62,43 +190,37 @@ bool LoadXboxFile(const std::string& filePath) {
     std::cout << "[Scorpio] File size: " << fileSize << " bytes ("
         << fileSize / (1024 * 1024) << " MB)" << std::endl;
 
-    // Read header
     std::vector<uint8_t> header(512);
     file.read(reinterpret_cast<char*>(header.data()), 512);
+    file.close();
 
     std::cout << "[Scorpio] File header bytes:" << std::endl;
     PrintHex(header, 32);
 
-    // Detect file type
     if (IsXVCFile(header)) {
         std::cout << "[Scorpio] XVC Container detected!" << std::endl;
         std::cout << "[Scorpio] This is an Xbox One game package!" << std::endl;
-
-        // Parse XVC header
         XVCHeader* xvcHeader = reinterpret_cast<XVCHeader*>(header.data());
         std::cout << "[Scorpio] XVC Version: " << xvcHeader->version << std::endl;
         std::cout << "[Scorpio] Content Size: " << xvcHeader->contentSize << " bytes" << std::endl;
-        std::cout << "[Scorpio] Content ID: " << xvcHeader->contentId << std::endl;
-
     }
     else if (IsPEFile(header)) {
         std::cout << "[Scorpio] Valid PE executable detected!" << std::endl;
         std::cout << "[Scorpio] This looks like an Xbox One executable!" << std::endl;
+        ParsePEHeader(filePath);
     }
     else {
         std::cout << "[Scorpio] Unknown file format" << std::endl;
-        std::cout << "[Scorpio] First 4 bytes: ";
-        printf("%02X %02X %02X %02X\n",
+        printf("First 4 bytes: %02X %02X %02X %02X\n",
             header[0], header[1], header[2], header[3]);
     }
 
-    file.close();
     return true;
 }
 
 int main(int argc, char* argv[]) {
     std::cout << "================================" << std::endl;
-    std::cout << "   Scorpio v0.0.2" << std::endl;
+    std::cout << "   Scorpio v0.0.3" << std::endl;
     std::cout << "   Xbox One Translation Layer" << std::endl;
     std::cout << "   github.com/Scorpio-Xbox" << std::endl;
     std::cout << "================================" << std::endl;
