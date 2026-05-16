@@ -274,9 +274,37 @@ bool LoadXboxFile(const std::string& filePath) {
     {
         std::cout << "[Scorpio] Game launched! PID: " << pi.dwProcessId << std::endl;
         WaitForSingleObject(pi.hProcess, INFINITE);
+
+        DWORD exitCode = 0;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+
+        std::cout << "[Scorpio] Game exited with code: 0x"
+            << std::hex << exitCode << std::dec << std::endl;
+
+        if (exitCode == 0xC0000135) {
+            std::cout << "[Scorpio] DIAGNOSIS: Missing DLL!" << std::endl;
+        }
+        else if (exitCode == 0xC0000005) {
+            std::cout << "[Scorpio] DIAGNOSIS: Access Violation!" << std::endl;
+        }
+        else if (exitCode == 0xC000007B) {
+            std::cout << "[Scorpio] DIAGNOSIS: Bad Image Format!" << std::endl;
+        }
+        else if (exitCode == 0xC0000142) {
+            std::cout << "[Scorpio] DIAGNOSIS: DLL Init Failed!" << std::endl;
+        }
+        else if (exitCode == 0x00000001) {
+            std::cout << "[Scorpio] DIAGNOSIS: Generic error - Xbox runtime missing!" << std::endl;
+        }
+        else if (exitCode == 0x00000000) {
+            std::cout << "[Scorpio] Game exited cleanly!" << std::endl;
+        }
+        else {
+            std::cout << "[Scorpio] Unknown exit code - needs investigation" << std::endl;
+        }
+
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        std::cout << "[Scorpio] Game exited!" << std::endl;
     }
     else {
         std::cout << "[Scorpio] Failed! Error: " << GetLastError() << std::endl;
@@ -286,7 +314,7 @@ bool LoadXboxFile(const std::string& filePath) {
 
 int main(int argc, char* argv[]) {
     std::cout << "================================" << std::endl;
-    std::cout << "   Scorpio v0.0.4" << std::endl;
+    std::cout << "   Scorpio v0.0.7" << std::endl;
     std::cout << "   Xbox One Translation Layer" << std::endl;
     std::cout << "   github.com/Scorpio-Xbox" << std::endl;
     std::cout << "================================" << std::endl;
