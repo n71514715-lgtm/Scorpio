@@ -60,5 +60,98 @@ extern "C" {
     {
         OutputDebugStringA("[Scorpio/xg_x] XGGetDeviceContext stubbed\n");
     }
+    __declspec(dllexport) HRESULT XGCreateTextureComputer(
+        void* pDevice,
+        void** ppComputer)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateTextureComputer stubbed\n");
+        if (ppComputer) *ppComputer = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) HRESULT XGCreateTextureFetcher(
+        void* pDevice,
+        void** ppFetcher)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateTextureFetcher stubbed\n");
+        if (ppFetcher) *ppFetcher = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) HRESULT XGCreateSurfaceComputer(
+        void* pDevice,
+        void** ppComputer)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateSurfaceComputer stubbed\n");
+        if (ppComputer) *ppComputer = nullptr;
+        return S_OK;
+    }
+    __declspec(dllexport) HRESULT XGComputeOptimalTileMode(
+        void* pDesc,
+        void* pTileMode)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGComputeOptimalTileMode stubbed\n");
+        if (pTileMode) memset(pTileMode, 0, 16);
+        return S_OK;
+    }
+    __declspec(dllexport) HRESULT XGCreateTexture2DComputer(
+        void* pDevice, void** ppComputer)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateTexture2DComputer stubbed\n");
+        if (ppComputer) *ppComputer = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) HRESULT XGCreateTexture3DComputer(
+        void* pDevice, void** ppComputer)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateTexture3DComputer stubbed\n");
+        if (ppComputer) *ppComputer = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) HRESULT XGCreateTextureCubeComputer(
+        void* pDevice, void** ppComputer)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateTextureCubeComputer stubbed\n");
+        if (ppComputer) *ppComputer = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) HRESULT XGCreateTextureArrayComputer(
+        void* pDevice, void** ppComputer)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGCreateTextureArrayComputer stubbed\n");
+        if (ppComputer) *ppComputer = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) void XGSetTextureHeader(
+        void* pDesc, void* pHeader)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGSetTextureHeader stubbed\n");
+    }
+
+    __declspec(dllexport) void XGGetTextureDesc(
+        void* pHeader, UINT32 mip, void* pDesc)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGGetTextureDesc stubbed\n");
+    }
+
+    __declspec(dllexport) UINT32 XGComputeTextureSize(
+        void* pHeader)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGComputeTextureSize stubbed\n");
+        return 0;
+    }
+
+    __declspec(dllexport) HRESULT XGComputeSurfaceInfo(
+        void* pDesc, void* pInfo)
+    {
+        OutputDebugStringA("[Scorpio/xg_x] XGComputeSurfaceInfo stubbed\n");
+        return S_OK;
+    }
+    
+    
 
 } // extern "C"

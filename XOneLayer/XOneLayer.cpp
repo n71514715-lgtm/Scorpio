@@ -259,24 +259,60 @@ bool LoadXboxFile(const std::string& filePath) {
     if (CopyFileA(xfpSource.c_str(), xfpDest.c_str(), FALSE)) {
         std::cout << "[Scorpio] XFrontPanelDisplay.dll injected!" << std::endl;
     }
+    // Copy AcpHal.dll
+    std::string acpSource = exeDir + "\\AcpHal.dll";
+    std::string acpDest = gameDir + "\\AcpHal.dll";
+    if (CopyFileA(acpSource.c_str(), acpDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] AcpHal.dll injected!" << std::endl;
+    }
+    // Copy XGameRuntime.dll
+    std::string xgrSource = exeDir + "\\XGameRuntime.dll";
+    std::string xgrDest = gameDir + "\\XGameRuntime.dll";
+    if (CopyFileA(xgrSource.c_str(), xgrDest.c_str(), FALSE)) {
+        std::cout << "[Scorpio] XGameRuntime.dll injected!" << std::endl;
+    }
     STARTUPINFOA si = {};
     PROCESS_INFORMATION pi = {};
     si.cb = sizeof(si);
-
+    SetDllDirectoryA(gameDir.c_str());
     std::cout << "[Scorpio] Launching game process..." << std::endl;
 
     if (CreateProcessA(
         filePath.c_str(),
         nullptr, nullptr, nullptr,
-        FALSE, 0, nullptr,
+        FALSE, CREATE_SUSPENDED, nullptr,
         gameDir.c_str(),
         &si, &pi))
     {
-        std::cout << "[Scorpio] Game launched! PID: " << pi.dwProcessId << std::endl;
+        std::cout << "[Scorpio] Game launched (suspended) PID: " << pi.dwProcessId << std::endl;
+
+        // Inject ScorpioHook.dll before the game runs a single instruction
+        char selfPath[MAX_PATH];
+        GetModuleFileNameA(NULL, selfPath, MAX_PATH);
+        std::string selfDir = std::string(selfPath).substr(0, std::string(selfPath).find_last_of("\\"));
+        std::string hookPath = selfDir + "\\ScorpioHook.dll";
+
+        LPVOID remoteMem = VirtualAllocEx(pi.hProcess, nullptr, hookPath.size() + 1, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (remoteMem) {
+            WriteProcessMemory(pi.hProcess, remoteMem, hookPath.c_str(), hookPath.size() + 1, nullptr);
+            HANDLE hRt = CreateRemoteThread(pi.hProcess, nullptr, 0,
+                (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA"),
+                remoteMem, 0, nullptr);
+            if (hRt) {
+                WaitForSingleObject(hRt, 5000);
+                CloseHandle(hRt);
+                std::cout << "[Scorpio] ScorpioHook.dll injected - LoadLibrary redirected!" << std::endl;
+            }
+            VirtualFreeEx(pi.hProcess, remoteMem, 0, MEM_RELEASE);
+        }
+
+        ResumeThread(pi.hThread);
         WaitForSingleObject(pi.hProcess, INFINITE);
 
         DWORD exitCode = 0;
         GetExitCodeProcess(pi.hProcess, &exitCode);
+
+       
 
         std::cout << "[Scorpio] Game exited with code: 0x"
             << std::hex << exitCode << std::dec << std::endl;

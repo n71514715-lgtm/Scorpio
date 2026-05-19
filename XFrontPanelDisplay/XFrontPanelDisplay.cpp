@@ -28,5 +28,34 @@ extern "C" {
     {
         // Nothing to do on PC
     }
+    __declspec(dllexport) HRESULT XFrontPanelPresentBuffer(
+        void* pBuffer)
+    {
+        OutputDebugStringA("[Scorpio/XFrontPanel] XFrontPanelPresentBuffer stubbed\n");
+        return S_OK;
+    }
 
+   
+    
+    __declspec(dllexport) HRESULT XFrontPanelGetLightStates(
+        void* pStates)
+    {
+        OutputDebugStringA("[Scorpio/XFrontPanel] XFrontPanelGetLightStates stubbed\n");
+        if (pStates) memset(pStates, 0, 64);
+        return S_OK;
+    }
+
+    __declspec(dllexport) HRESULT XFrontPanelSetLightStates(
+        void* pStates)
+    {
+        OutputDebugStringA("[Scorpio/XFrontPanel] XFrontPanelSetLightStates stubbed\n");
+        return S_OK;
+    }
+    __declspec(dllexport) HRESULT XFrontPanelGetButtonStates(
+        UINT32* pStates)
+    {
+        OutputDebugStringA("[Scorpio/XFrontPanel] XFrontPanelGetButtonStates stubbed\n");
+        if (pStates) *pStates = 0;
+        return S_OK;
+    }
 } // extern "C"

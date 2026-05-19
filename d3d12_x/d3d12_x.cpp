@@ -2,8 +2,9 @@
 #include <iostream>
 #include <Windows.h>
 #include <d3d12.h>
-
-// Scorpio - Xbox One Translation Layer
+#pragma comment(linker, "/export:D3D12SerializeRootSignature=d3d12.D3D12SerializeRootSignature")
+#pragma comment(linker, "/export:D3D12SerializeVersionedRootSignature=d3d12.D3D12SerializeVersionedRootSignature")
+// Scorpio  -  Xbox One Translation Layer
 // d3d12_x.dll - Xbox DirectX 12 Translation Stub
 
 #pragma comment(lib, "d3d12.lib")
@@ -36,5 +37,56 @@ extern "C" {
     {
         OutputDebugStringA("[Scorpio/d3d12_x] GPU memory config stubbed\n");
     }
+    __declspec(dllexport) HRESULT D3DMapEsramMemory(
+        void* pResource,
+        void** ppData)
+    {
+        OutputDebugStringA("[Scorpio/d3d12_x] D3DMapEsramMemory stubbed\n");
+        if (ppData) *ppData = nullptr;
+        return S_OK;
+    }
+
+    __declspec(dllexport) void D3DUnmapEsramMemory(
+        void* pResource)
+    {
+        OutputDebugStringA("[Scorpio/d3d12_x] D3DUnmapEsramMemory stubbed\n");
+    }
+
+    __declspec(dllexport) HRESULT D3DAllocateGraphicsMemory(
+        SIZE_T size,
+        SIZE_T alignment,
+        UINT32 flags,
+        void** ppMemory)
+    {
+        OutputDebugStringA("[Scorpio/d3d12_x] D3DAllocateGraphicsMemory stubbed\n");
+        if (ppMemory) *ppMemory = _aligned_malloc(size, alignment > 0 ? alignment : 16);
+        return S_OK;
+    }
+
+    __declspec(dllexport) void D3DFreeGraphicsMemory(
+        void* pMemory)
+    {
+        OutputDebugStringA("[Scorpio/d3d12_x] D3DFreeGraphicsMemory stubbed\n");
+        _aligned_free(pMemory);
+    }
+    __declspec(dllexport) void D3D12XboxSetProcessDebugFlags(
+        UINT32 flags)
+    {
+        OutputDebugStringA("[Scorpio/d3d12_x] D3D12XboxSetProcessDebugFlags stubbed\n");
+    }
+
+    
+
+    __declspec(dllexport) void D3D12XboxSetDisplayMode(
+        void* pCommandQueue,
+        void* pDesc)
+    {
+        OutputDebugStringA("[Scorpio/d3d12_x] D3D12XboxSetDisplayMode stubbed\n");
+    }
+
+
+    
+
+    
 
 } // extern "C"s
