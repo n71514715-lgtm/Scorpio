@@ -6,7 +6,7 @@
 #pragma comment(linker, "/export:D3D12SerializeVersionedRootSignature=d3d12.D3D12SerializeVersionedRootSignature")
 // Scorpio  -  Xbox One Translation Layer
 // d3d12_x.dll - Xbox DirectX 12 Translation Stub
-
+// d3d12_x internally needs XGameRuntime — stub it here too
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 
@@ -86,6 +86,8 @@ extern "C" {
 
 
     
+  // d3d12_x internally needs XGameRuntime — stub it here too
+    __declspec(dllexport) HRESULT XGameRuntimeInitialize() { return S_OK; }
 
     
 

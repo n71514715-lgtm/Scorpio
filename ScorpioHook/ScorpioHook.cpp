@@ -1,6 +1,9 @@
 #include "pch.h"
 #include <Windows.h>
 #include <string>
+#include <stdio.h>
+
+extern "C" USHORT WINAPI RtlCaptureStackBackTrace(ULONG, ULONG, PVOID*, PULONG);
 
 // ?? NT types ??????????????????????????????????????????????????
 typedef struct _UNICODE_STRING {
@@ -12,15 +15,16 @@ typedef struct _UNICODE_STRING {
 typedef LONG NTSTATUS;
 #define NT_SUCCESS(s) ((NTSTATUS)(s) >= 0)
 
-typedef NTSTATUS(NTAPI* PFN_LdrLoadDll)(
-    PWCHAR, ULONG*, UNICODE_STRING*, HANDLE*);
-
+typedef NTSTATUS(NTAPI* PFN_LdrLoadDll)(PWCHAR, ULONG*, UNICODE_STRING*, HANDLE*);
 typedef FARPROC(WINAPI* PFN_GetProcAddress)(HMODULE, LPCSTR);
+typedef void    (WINAPI* PFN_ExitProcess)(UINT);
+typedef BOOL(WINAPI* PFN_TerminateProcess)(HANDLE, UINT);
+typedef void    (*PFN_exit)(int);
 
 // ?? Xbox DLL list ?????????????????????????????????????????????
 static const wchar_t* XBOX_DLLS[] = {
-    L"xgameruntime.dll", L"gameinput.dll",  L"xg_x.dll",
-    L"d3d12_x.dll",      L"xmem.dll",       L"acphal.dll",
+    L"gameinput.dll",  L"xg_x.dll",
+    L"d3d12_x.dll",    L"xmem.dll",       L"acphal.dll",
     L"xfrontpaneldisplay.dll", nullptr
 };
 
@@ -29,7 +33,10 @@ static void* g_ldrFunc = nullptr;
 #define        HOOK_BYTES 14
 static BYTE    g_origBytes[HOOK_BYTES] = {};
 
-static PFN_GetProcAddress g_origGetProcAddress = nullptr;
+static PFN_GetProcAddress   g_origGPA = nullptr;
+static PFN_ExitProcess      g_origExitProcess = nullptr;
+static PFN_TerminateProcess g_origTerminateProcess = nullptr;
+static PFN_exit             g_origExit = nullptr;
 
 // ?? Helpers ???????????????????????????????????????????????????
 static const wchar_t* BaseName(const wchar_t* path) {
@@ -46,12 +53,33 @@ static bool IsXboxName(const wchar_t* fname) {
     return false;
 }
 
+// ?? Stack trace ???????????????????????????????????????????????
+static void PrintStack(const char* reason) {
+    char header[128];
+    sprintf_s(header, "[ScorpioHook] *** %s *** stack:\n", reason);
+    OutputDebugStringA(header);
+    void* stack[32] = {};
+    USHORT n = RtlCaptureStackBackTrace(1, 32, stack, nullptr);
+    for (USHORT i = 0; i < n; i++) {
+        char mod[MAX_PATH] = "?";
+        HMODULE hm = nullptr;
+        if (GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            (LPCSTR)stack[i], &hm))
+            GetModuleFileNameA(hm, mod, MAX_PATH);
+        char line[640];
+        sprintf_s(line, "[ScorpioHook]   [%02u] %p  %s\n", (UINT)i, stack[i], mod);
+        OutputDebugStringA(line);
+    }
+}
+
 // ?? IAT patcher ???????????????????????????????????????????????
 static void PatchIAT(HMODULE hMod, const char* dll, const char* fn,
     void* hook, void** ppOrig) {
     if (!hMod) return;
-    BYTE* base = (BYTE*)hMod;
     __try {
+        BYTE* base = (BYTE*)hMod;
         auto* dos = (IMAGE_DOS_HEADER*)base;
         if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
         auto* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
@@ -80,36 +108,55 @@ static void PatchIAT(HMODULE hMod, const char* dll, const char* fn,
     __except (EXCEPTION_EXECUTE_HANDLER) {}
 }
 
-// ?? Hooked GetProcAddress — logs xgameruntime lookups ?????????
-static FARPROC WINAPI HookedGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
-    FARPROC result = g_origGetProcAddress(hModule, lpProcName);
+// ?? Hook functions ????????????????????????????????????????????
+static void HookedExit(int code) {
+    char msg[64];
+    sprintf_s(msg, "exit(%d)", code);
+    PrintStack(msg);
+    g_origExit(code);
+}
 
-    if (hModule && lpProcName && ((ULONG_PTR)lpProcName > 0xFFFF)) {
-        wchar_t modPath[MAX_PATH] = {};
-        GetModuleFileNameW(hModule, modPath, MAX_PATH);
-        const wchar_t* modName = BaseName(modPath);
-        wchar_t lower[MAX_PATH] = {};
-        wcsncpy_s(lower, modName, _TRUNCATE);
-        for (int j = 0; lower[j]; j++) lower[j] = towlower(lower[j]);
+static void WINAPI HookedExitProcess(UINT code) {
+    char msg[64];
+    sprintf_s(msg, "ExitProcess(%u)", code);
+    PrintStack(msg);
+    g_origExitProcess(code);
+}
 
-        if (wcsstr(lower, L"xgameruntime") || wcsstr(lower, L"gameinput")) {
-            if (result) {
-                OutputDebugStringA((std::string("[ScorpioHook] GetProcAddress HIT: ")
-                    + lpProcName + "\n").c_str());
-            }
-            else {
-                OutputDebugStringA((std::string("[ScorpioHook] GetProcAddress MISS: ")
-                    + lpProcName + " <-- MISSING!\n").c_str());
-            }
+static BOOL WINAPI HookedTerminateProcess(HANDLE hProcess, UINT code) {
+    if (hProcess == GetCurrentProcess() || hProcess == (HANDLE)-1) {
+        char msg[64];
+        sprintf_s(msg, "TerminateProcess(self,%u)", code);
+        PrintStack(msg);
+    }
+    return g_origTerminateProcess(hProcess, code);
+}
+
+static FARPROC WINAPI HookedGetProcAddress(HMODULE hMod, LPCSTR lpName) {
+    FARPROC result = g_origGPA(hMod, lpName);
+    if (hMod && lpName && (ULONG_PTR)lpName > 0xFFFF) {
+        wchar_t path[MAX_PATH] = {};
+        GetModuleFileNameW(hMod, path, MAX_PATH);
+        wchar_t low[MAX_PATH] = {};
+        wcsncpy_s(low, BaseName(path), _TRUNCATE);
+        for (int j = 0; low[j]; j++) low[j] = towlower(low[j]);
+        if (wcsstr(low, L"xgameruntime") || wcsstr(low, L"d3d12") ||
+            wcsstr(low, L"xg_x") || wcsstr(low, L"xgx") ||
+            wcsstr(low, L"gameinput")) {
+            char line[512];
+            sprintf_s(line, result
+                ? "[ScorpioHook] GPA HIT:  [%ws] %s\n"
+                : "[ScorpioHook] GPA MISS: [%ws] %s  <-- MISSING!\n",
+                BaseName(path), lpName);
+            OutputDebugStringA(line);
         }
     }
     return result;
 }
 
-// ?? Forward declare Repatch ???????????????????????????????????
+// ?? LdrLoadDll hook ???????????????????????????????????????????
 static void Repatch();
 
-// ?? Hooked LdrLoadDll ?????????????????????????????????????????
 static NTSTATUS NTAPI HookedLdrLoadDll(
     PWCHAR PathToFile, ULONG* Flags,
     UNICODE_STRING* ModuleFileName, HANDLE* ModuleHandle)
@@ -154,7 +201,6 @@ static NTSTATUS NTAPI HookedLdrLoadDll(
     return result;
 }
 
-// ?? Re-install LdrLoadDll hook ????????????????????????????????
 static void Repatch() {
     BYTE jmp[HOOK_BYTES] = { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 };
     *(ULONG_PTR*)(jmp + 6) = (ULONG_PTR)HookedLdrLoadDll;
@@ -165,14 +211,9 @@ static void Repatch() {
     FlushInstructionCache(GetCurrentProcess(), g_ldrFunc, HOOK_BYTES);
 }
 
-// ?? Install LdrLoadDll hook ???????????????????????????????????
 static bool InstallLdrHook() {
-    g_ldrFunc = (void*)GetProcAddress(
-        GetModuleHandleA("ntdll.dll"), "LdrLoadDll");
-    if (!g_ldrFunc) {
-        OutputDebugStringA("[ScorpioHook] LdrLoadDll not found!\n");
-        return false;
-    }
+    g_ldrFunc = (void*)GetProcAddress(GetModuleHandleA("ntdll.dll"), "LdrLoadDll");
+    if (!g_ldrFunc) { OutputDebugStringA("[ScorpioHook] LdrLoadDll not found!\n"); return false; }
     DWORD old;
     VirtualProtect(g_ldrFunc, HOOK_BYTES, PAGE_EXECUTE_READWRITE, &old);
     memcpy(g_origBytes, g_ldrFunc, HOOK_BYTES);
@@ -185,30 +226,56 @@ static bool InstallLdrHook() {
     return true;
 }
 
+// ?? DoInstallHooks — plain C function so __try works in DllMain ??
+static void DoInstallHooks() {
+    // Get game directory
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    wchar_t* slash = wcsrchr(exePath, L'\\');
+    if (slash) { *slash = L'\0'; wcscpy_s(g_gameDir, exePath); }
+
+    wchar_t msg[MAX_PATH + 64];
+    wcscpy_s(msg, L"[ScorpioHook] Game dir: ");
+    wcscat_s(msg, g_gameDir);
+    wcscat_s(msg, L"\n");
+    OutputDebugStringW(msg);
+
+    // Hook LdrLoadDll to redirect Xbox DLL loads
+    InstallLdrHook();
+
+    // Hook Terraria.exe's IAT
+    HMODULE hGame = GetModuleHandleW(nullptr);
+
+    PatchIAT(hGame, "kernel32.dll", "GetProcAddress",
+        (void*)HookedGetProcAddress, (void**)&g_origGPA);
+    if (!g_origGPA) g_origGPA = GetProcAddress;
+
+    PatchIAT(hGame, "kernel32.dll", "ExitProcess",
+        (void*)HookedExitProcess, (void**)&g_origExitProcess);
+    if (!g_origExitProcess) g_origExitProcess = ExitProcess;
+
+    PatchIAT(hGame, "kernel32.dll", "TerminateProcess",
+        (void*)HookedTerminateProcess, (void**)&g_origTerminateProcess);
+    if (!g_origTerminateProcess) g_origTerminateProcess = TerminateProcess;
+
+    // Hook exit() — Terraria uses api-ms-win-crt-runtime-l1-1-0.dll
+    PatchIAT(hGame, "api-ms-win-crt-runtime-l1-1-0.dll", "exit",
+        (void*)HookedExit, (void**)&g_origExit);
+    if (!g_origExit) g_origExit = exit;
+
+    OutputDebugStringA("[ScorpioHook] All hooks installed!\n");
+}
+
 // ?? DllMain ???????????????????????????????????????????????????
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-
-        wchar_t exePath[MAX_PATH];
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        wchar_t* slash = wcsrchr(exePath, L'\\');
-        if (slash) { *slash = L'\0'; wcscpy_s(g_gameDir, exePath); }
-
-        OutputDebugStringW((std::wstring(
-            L"[ScorpioHook] Game dir: ") + g_gameDir + L"\n").c_str());
-
-        // Hook LdrLoadDll to redirect Xbox DLL loads
-        InstallLdrHook();
-
-        // Hook GetProcAddress to see what xgameruntime functions Terraria needs
-        HMODULE hGame = GetModuleHandleW(nullptr);
-        PatchIAT(hGame, "kernel32.dll", "GetProcAddress",
-            (void*)HookedGetProcAddress, (void**)&g_origGetProcAddress);
-        if (!g_origGetProcAddress)
-            g_origGetProcAddress = GetProcAddress;
-
-        OutputDebugStringA("[ScorpioHook] GetProcAddress hook installed!\n");
+        __try {
+            DoInstallHooks();
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            OutputDebugStringA("[ScorpioHook] EXCEPTION in DllMain!\n");
+        }
     }
     return TRUE;
 }
